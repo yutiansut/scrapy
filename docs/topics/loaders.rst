@@ -136,6 +136,20 @@ accept one (and only one) positional argument, which will be an iterator.
    containing the collected values (for that field). The result of the output
    processors is the value that will be finally assigned to the item.
 
+If you want to use a plain function as a processor, make sure it receives
+``self`` as the first argument::
+
+    def lowercase_processor(self, values):
+        for v in values:
+            yield v.lower()
+
+    class MyItemLoader(ItemLoader):
+        name_in = lowercase_processor
+
+This is because whenever a function is assigned as a class variable, it becomes
+a method and would be passed the instance as the the first argument when being
+called. See `this answer on stackoverflow`_ for more details.
+
 The other thing you need to keep in mind is that the values returned by input
 processors are collected internally (in lists) and then passed to output
 processors to populate the fields.
@@ -143,6 +157,7 @@ processors to populate the fields.
 Last, but not least, Scrapy comes with some :ref:`commonly used processors
 <topics-loaders-available-processors>` built-in for convenience.
 
+.. _this answer on stackoverflow: https://stackoverflow.com/a/35322635
 
 Declaring Item Loaders
 ======================
@@ -271,7 +286,7 @@ ItemLoader objects
     given, one is instantiated automatically using the class in
     :attr:`default_item_class`.
 
-    When instantiated with a `selector` or a `response` parameters
+    When instantiated with a ``selector`` or a ``response`` parameters
     the :class:`ItemLoader` class provides convenient mechanisms for extracting
     data from web pages using :ref:`selectors <topics-selectors>`.
 
@@ -663,10 +678,10 @@ Here is a list of all built-in processors:
         >>> from scrapy.loader.processors import Join
         >>> proc = Join()
         >>> proc(['one', 'two', 'three'])
-        u'one two three'
+        'one two three'
         >>> proc = Join('<br>')
         >>> proc(['one', 'two', 'three'])
-        u'one<br>two<br>three'
+        'one<br>two<br>three'
 
 .. class:: Compose(\*functions, \**default_loader_context)
 
@@ -729,9 +744,9 @@ Here is a list of all built-in processors:
         ...     return None if x == 'world' else x
         ...
         >>> from scrapy.loader.processors import MapCompose
-        >>> proc = MapCompose(filter_world, unicode.upper)
-        >>> proc([u'hello', u'world', u'this', u'is', u'scrapy'])
-        [u'HELLO, u'THIS', u'IS', u'SCRAPY']
+        >>> proc = MapCompose(filter_world, str.upper)
+        >>> proc(['hello', 'world', 'this', 'is', 'scrapy'])
+        ['HELLO, 'THIS', 'IS', 'SCRAPY']
 
     As with the Compose processor, functions can receive Loader contexts, and
     constructor keyword arguments are used as default context values. See
@@ -757,7 +772,7 @@ Here is a list of all built-in processors:
         >>> import json
         >>> proc_single_json_str = Compose(json.loads, SelectJmes("foo"))
         >>> proc_single_json_str('{"foo": "bar"}')
-        u'bar'
+        'bar'
         >>> proc_json_list = Compose(json.loads, MapCompose(SelectJmes('foo')))
         >>> proc_json_list('[{"foo":"bar"}, {"baz":"tar"}]')
-        [u'bar']
+        ['bar']

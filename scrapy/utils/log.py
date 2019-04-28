@@ -32,7 +32,7 @@ class TopLevelFormatter(logging.Filter):
 
     Since it can't be set for just one logger (it won't propagate for its
     children), it's going to be set in the root handler, with a parametrized
-    `loggers` list where it should act.
+    ``loggers`` list where it should act.
     """
 
     def __init__(self, loggers=None):
@@ -154,7 +154,7 @@ class StreamLogger(object):
     """Fake file-like stream object that redirects writes to a logger instance
 
     Taken from:
-        http://www.electricmonk.nl/log/2011/08/14/redirect-stdout-and-stderr-to-a-logger-in-python/
+        https://www.electricmonk.nl/log/2011/08/14/redirect-stdout-and-stderr-to-a-logger-in-python/
     """
     def __init__(self, logger, log_level=logging.INFO):
         self.logger = logger

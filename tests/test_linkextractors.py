@@ -451,6 +451,17 @@ class Base:
                 Link(url='http://example.org/item3.html', text=u'Item 3', nofollow=False),
             ])
 
+        def test_ftp_links(self):
+            body = b"""
+            <html><body>
+            <div><a href="ftp://www.external.com/">An Item</a></div>
+            </body></html>"""
+            response = HtmlResponse("http://www.example.com/index.html", body=body, encoding='utf8')
+            lx = self.extractor_cls()
+            self.assertEqual(lx.extract_links(response), [
+                Link(url='ftp://www.external.com/', text=u'An Item', fragment='', nofollow=False),
+            ])
+
 
 class LxmlLinkExtractorTestCase(Base.LinkExtractorTestCase):
     extractor_cls = LxmlLinkExtractor
@@ -468,7 +479,30 @@ class LxmlLinkExtractorTestCase(Base.LinkExtractorTestCase):
             Link(url='http://example.org/item3.html', text=u'Item 3', nofollow=False),
         ])
 
+    def test_link_restrict_text(self):
+        html = b"""
+        <a href="http://example.org/item1.html">Pic of a cat</a>
+        <a href="http://example.org/item2.html">Pic of a dog</a>
+        <a href="http://example.org/item3.html">Pic of a cow</a>
+        """
+        response = HtmlResponse("http://example.org/index.html", body=html)
+        # Simple text inclusion test
+        lx = self.extractor_cls(restrict_text='dog')
+        self.assertEqual([link for link in lx.extract_links(response)], [
+            Link(url='http://example.org/item2.html', text=u'Pic of a dog', nofollow=False),
+        ])
+        # Unique regex test
+        lx = self.extractor_cls(restrict_text=r'of.*dog')
+        self.assertEqual([link for link in lx.extract_links(response)], [
+            Link(url='http://example.org/item2.html', text=u'Pic of a dog', nofollow=False),
+        ])
+        # Multiple regex test
+        lx = self.extractor_cls(restrict_text=[r'of.*dog', r'of.*cat'])
+        self.assertEqual([link for link in lx.extract_links(response)], [
+            Link(url='http://example.org/item1.html', text=u'Pic of a cat', nofollow=False),
+            Link(url='http://example.org/item2.html', text=u'Pic of a dog', nofollow=False),
+        ])
+
     @pytest.mark.xfail
     def test_restrict_xpaths_with_html_entities(self):
         super(LxmlLinkExtractorTestCase, self).test_restrict_xpaths_with_html_entities()
-

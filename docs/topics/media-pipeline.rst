@@ -132,7 +132,7 @@ For example, the following image URL::
 
     http://www.example.com/image.jpg
 
-Whose `SHA1 hash` is::
+Whose ``SHA1 hash`` is::
 
     3afec3b4765f8f0a07b78f98c07b83f013567a0a
 
@@ -171,12 +171,26 @@ policy::
 
 For more information, see `canned ACLs`_ in the Amazon S3 Developer Guide.
 
+Because Scrapy uses ``boto`` / ``botocore`` internally you can also use other S3-like storages. Storages like
+self-hosted `Minio`_ or `s3.scality`_. All you need to do is set endpoint option in you Scrapy settings::
+
+    AWS_ENDPOINT_URL = 'http://minio.example.com:9000'
+
+For self-hosting you also might feel the need not to use SSL and not to verify SSL connection::
+
+    AWS_USE_SSL = False # or True (None by default)
+    AWS_VERIFY = False # or True (None by default)
+
+.. _Minio: https://github.com/minio/minio
+.. _s3.scality: https://s3.scality.com/
 .. _canned ACLs: https://docs.aws.amazon.com/AmazonS3/latest/dev/acl-overview.html#canned-acl
 
 Google Cloud Storage
 ---------------------
 
 .. setting:: GCS_PROJECT_ID
+.. setting:: FILES_STORE_GCS_ACL
+.. setting:: IMAGES_STORE_GCS_ACL
 
 :setting:`FILES_STORE` and :setting:`IMAGES_STORE` can represent a Google Cloud Storage
 bucket. Scrapy will automatically upload the files to the bucket. (requires `google-cloud-storage`_ )
@@ -191,6 +205,19 @@ For example, these are valid :setting:`IMAGES_STORE` and :setting:`GCS_PROJECT_I
 For information about authentication, see this `documentation`_.
 
 .. _documentation: https://cloud.google.com/docs/authentication/production
+
+You can modify the Access Control List (ACL) policy used for the stored files,
+which is defined by the :setting:`FILES_STORE_GCS_ACL` and
+:setting:`IMAGES_STORE_GCS_ACL` settings. By default, the ACL is set to
+``''`` (empty string) which means that Cloud Storage applies the bucket's default object ACL to the object.
+To make the files publicly available use the ``publicRead``
+policy::
+
+    IMAGES_STORE_GCS_ACL = 'publicRead'
+
+For more information, see `Predefined ACLs`_ in the Google Cloud Platform Developer Guide.
+
+.. _Predefined ACLs: https://cloud.google.com/storage/docs/access-control/lists#predefined-acl
 
 Usage example
 =============
@@ -283,7 +310,7 @@ images.
 
 .. setting:: IMAGES_THUMBS
 
-In order use this feature, you must set :setting:`IMAGES_THUMBS` to a dictionary
+In order to use this feature, you must set :setting:`IMAGES_THUMBS` to a dictionary
 where the keys are the thumbnail names and the values are their dimensions.
 
 For example::

@@ -7,6 +7,7 @@ import sys
 from twisted.internet import reactor, defer
 from zope.interface.verify import verifyClass, DoesNotImplement
 
+from scrapy import Spider
 from scrapy.core.engine import ExecutionEngine
 from scrapy.resolver import CachingThreadedResolver
 from scrapy.interfaces import ISpiderLoader
@@ -27,6 +28,10 @@ logger = logging.getLogger(__name__)
 class Crawler(object):
 
     def __init__(self, spidercls, settings=None):
+        if isinstance(spidercls, Spider):
+            raise ValueError(
+                'The spidercls argument must be a class, not an object')
+
         if isinstance(settings, dict) or settings is None:
             settings = Settings(settings)
 
@@ -83,7 +88,7 @@ class Crawler(object):
             yield defer.maybeDeferred(self.engine.start)
         except Exception:
             # In Python 2 reraising an exception after yield discards
-            # the original traceback (see http://bugs.python.org/issue7563),
+            # the original traceback (see https://bugs.python.org/issue7563),
             # so sys.exc_info() workaround is used.
             # This workaround also works in Python 3, but it is not needed,
             # and it is slower, so in Python 3 we use native `raise`.
@@ -137,6 +142,7 @@ class CrawlerRunner(object):
         self.spider_loader = _get_spider_loader(settings)
         self._crawlers = set()
         self._active = set()
+        self.bootstrap_failed = False
 
     @property
     def spiders(self):
@@ -152,7 +158,7 @@ class CrawlerRunner(object):
         It will call the given Crawler's :meth:`~Crawler.crawl` method, while
         keeping track of it so it can be stopped later.
 
-        If `crawler_or_spidercls` isn't a :class:`~scrapy.crawler.Crawler`
+        If ``crawler_or_spidercls`` isn't a :class:`~scrapy.crawler.Crawler`
         instance, this method will try to create one using this parameter as
         the spider class given to it.
 
@@ -167,6 +173,10 @@ class CrawlerRunner(object):
 
         :param dict kwargs: keyword arguments to initialize the spider
         """
+        if isinstance(crawler_or_spidercls, Spider):
+            raise ValueError(
+                'The crawler_or_spidercls argument cannot be a spider object, '
+                'it must be a spider class (or a Crawler object)')
         crawler = self.create_crawler(crawler_or_spidercls)
         return self._crawl(crawler, *args, **kwargs)
 
@@ -178,6 +188,7 @@ class CrawlerRunner(object):
         def _done(result):
             self.crawlers.discard(crawler)
             self._active.discard(d)
+            self.bootstrap_failed |= not getattr(crawler, 'spider', None)
             return result
 
         return d.addBoth(_done)
@@ -186,13 +197,17 @@ class CrawlerRunner(object):
         """
         Return a :class:`~scrapy.crawler.Crawler` object.
 
-        * If `crawler_or_spidercls` is a Crawler, it is returned as-is.
-        * If `crawler_or_spidercls` is a Spider subclass, a new Crawler
+        * If ``crawler_or_spidercls`` is a Crawler, it is returned as-is.
+        * If ``crawler_or_spidercls`` is a Spider subclass, a new Crawler
           is constructed for it.
-        * If `crawler_or_spidercls` is a string, this function finds
+        * If ``crawler_or_spidercls`` is a string, this function finds
           a spider with this name in a Scrapy project (using spider loader),
           then creates a Crawler instance for it.
         """
+        if isinstance(crawler_or_spidercls, Spider):
+            raise ValueError(
+                'The crawler_or_spidercls argument cannot be a spider object, '
+                'it must be a spider class (or a Crawler object)')
         if isinstance(crawler_or_spidercls, Crawler):
             return crawler_or_spidercls
         return self._create_crawler(crawler_or_spidercls)
@@ -271,7 +286,7 @@ class CrawlerProcess(CrawlerRunner):
         :setting:`REACTOR_THREADPOOL_MAXSIZE`, and installs a DNS cache based
         on :setting:`DNSCACHE_ENABLED` and :setting:`DNSCACHE_SIZE`.
 
-        If `stop_after_crawl` is True, the reactor will be stopped after all
+        If ``stop_after_crawl`` is True, the reactor will be stopped after all
         crawlers have finished, using :meth:`join`.
 
         :param boolean stop_after_crawl: stop or not the reactor when all

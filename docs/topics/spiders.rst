@@ -88,7 +88,7 @@ scrapy.Spider
 
        A list of URLs where the spider will begin to crawl from, when no
        particular URLs are specified. So, the first pages downloaded will be those
-       listed here. The subsequent URLs will be generated successively from data
+       listed here. The subsequent :class:`~scrapy.http.Request` will be generated successively from data
        contained in the start URLs.
 
    .. attribute:: custom_settings
@@ -129,7 +129,7 @@ scrapy.Spider
 
        You probably won't need to override this directly because the default
        implementation acts as a proxy to the :meth:`__init__` method, calling
-       it with the given arguments `args` and named arguments `kwargs`.
+       it with the given arguments ``args`` and named arguments ``kwargs``.
 
        Nonetheless, this method sets the :attr:`crawler` and :attr:`settings`
        attributes in the new instance so they can be accessed later inside the
@@ -190,7 +190,7 @@ scrapy.Spider
    .. method:: log(message, [level, component])
 
        Wrapper that sends a log message through the Spider's :attr:`logger`,
-       kept for backwards compatibility. For more information see
+       kept for backward compatibility. For more information see
        :ref:`topics-logging-from-spiders`.
 
    .. method:: closed(reason)
@@ -229,11 +229,11 @@ Return multiple Requests and items from a single callback::
         ]
 
         def parse(self, response):
-            for h3 in response.xpath('//h3').extract():
+            for h3 in response.xpath('//h3').getall():
                 yield {"title": h3}
 
-            for url in response.xpath('//a/@href').extract():
-                yield scrapy.Request(url, callback=self.parse)
+            for href in response.xpath('//a/@href').getall():
+                yield scrapy.Request(response.urljoin(href), self.parse)
 
 Instead of :attr:`~.start_urls` you can use :meth:`~.start_requests` directly;
 to give data more structure you can use :ref:`topics-items`::
@@ -251,11 +251,11 @@ to give data more structure you can use :ref:`topics-items`::
             yield scrapy.Request('http://www.example.com/3.html', self.parse)
 
         def parse(self, response):
-            for h3 in response.xpath('//h3').extract():
+            for h3 in response.xpath('//h3').getall():
                 yield MyItem(title=h3)
 
-            for url in response.xpath('//a/@href').extract():
-                yield scrapy.Request(url, callback=self.parse)
+            for href in response.xpath('//a/@href').getall():
+                yield scrapy.Request(response.urljoin(href), self.parse)
 
 .. _spiderargs:
 
@@ -298,13 +298,13 @@ The above example can also be written as follows::
 
 Keep in mind that spider arguments are only strings.
 The spider will not do any parsing on its own.
-If you were to set the `start_urls` attribute from the command line,
+If you were to set the ``start_urls`` attribute from the command line,
 you would have to parse it on your own into a list
 using something like
 `ast.literal_eval <https://docs.python.org/library/ast.html#ast.literal_eval>`_
 or `json.loads <https://docs.python.org/library/json.html#json.loads>`_
 and then set it as an attribute.
-Otherwise, you would cause iteration over a `start_urls` string
+Otherwise, you would cause iteration over a ``start_urls`` string
 (a very common python pitfall)
 resulting in each character being seen as a separate url.
 
@@ -402,10 +402,12 @@ Crawling rules
    of links extracted from each response using the specified ``link_extractor``.
    This is mainly used for filtering purposes.
 
-   ``process_request`` is a callable, or a string (in which case a method from
-   the spider object with that name will be used) which will be called with
-   every request extracted by this rule, and must return a request or None (to
-   filter out the request).
+   ``process_request`` is a callable (or a string, in which case a method from
+   the spider object with that name will be used) which will be called for every
+   :class:`~scrapy.http.Request` extracted by this rule. This callable should
+   take said request as first argument and the :class:`~scrapy.http.Response`
+   from which the request originated as second argument. It must return a
+   ``Request`` object or ``None`` (to filter out the request).
 
 CrawlSpider example
 ~~~~~~~~~~~~~~~~~~~
@@ -434,8 +436,8 @@ Let's now take a look at an example CrawlSpider with rules::
             self.logger.info('Hi, this is an item page! %s', response.url)
             item = scrapy.Item()
             item['id'] = response.xpath('//td[@id="item_id"]/text()').re(r'ID: (\d+)')
-            item['name'] = response.xpath('//td[@id="item_name"]/text()').extract()
-            item['description'] = response.xpath('//td[@id="item_description"]/text()').extract()
+            item['name'] = response.xpath('//td[@id="item_name"]/text()').get()
+            item['description'] = response.xpath('//td[@id="item_description"]/text()').get()
             return item
 
 
@@ -545,12 +547,12 @@ These spiders are pretty easy to use, let's have a look at one example::
         itertag = 'item'
 
         def parse_node(self, response, node):
-            self.logger.info('Hi, this is a <%s> node!: %s', self.itertag, ''.join(node.extract()))
+            self.logger.info('Hi, this is a <%s> node!: %s', self.itertag, ''.join(node.getall()))
 
             item = TestItem()
-            item['id'] = node.xpath('@id').extract()
-            item['name'] = node.xpath('name').extract()
-            item['description'] = node.xpath('description').extract()
+            item['id'] = node.xpath('@id').get()
+            item['name'] = node.xpath('name').get()
+            item['description'] = node.xpath('description').get()
             return item
 
 Basically what we did up there was to create a spider that downloads a feed from
@@ -679,6 +681,50 @@ SitemapSpider
         retrieved.
 
         Default is ``sitemap_alternate_links`` disabled.
+
+    .. method:: sitemap_filter(entries)
+
+        This is a filter funtion that could be overridden to select sitemap entries
+        based on their attributes.
+
+        For example::
+
+            <url>
+                <loc>http://example.com/</loc>
+                <lastmod>2005-01-01</lastmod>
+            </url>
+
+        We can define a ``sitemap_filter`` function to filter ``entries`` by date::
+
+            from datetime import datetime
+            from scrapy.spiders import SitemapSpider
+
+            class FilteredSitemapSpider(SitemapSpider):
+                name = 'filtered_sitemap_spider'
+                allowed_domains = ['example.com']
+                sitemap_urls = ['http://example.com/sitemap.xml']
+
+                def sitemap_filter(self, entries):
+                    for entry in entries:
+                        date_time = datetime.strptime(entry['lastmod'], '%Y-%m-%d')
+                        if date_time.year >= 2005:
+                            yield entry
+
+        This would retrieve only ``entries`` modified on 2005 and the following
+        years.
+
+        Entries are dict objects extracted from the sitemap document.
+        Usually, the key is the tag name and the value is the text inside it.
+
+        It's important to notice that:
+
+        - as the loc attribute is required, entries without this tag are discarded
+        - alternate links are stored in a list with the key ``alternate``
+          (see ``sitemap_alternate_links``)
+        - namespaces are removed, so lxml tags named as ``{namespace}tagname`` become only ``tagname``
+
+        If you omit this method, all entries found in sitemaps will be
+        processed, observing other attributes and their settings.
 
 
 SitemapSpider examples

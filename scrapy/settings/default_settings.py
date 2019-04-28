@@ -55,7 +55,7 @@ DEFAULT_REQUEST_HEADERS = {
 }
 
 DEPTH_LIMIT = 0
-DEPTH_STATS = True
+DEPTH_STATS_VERBOSE = False
 DEPTH_PRIORITY = 0
 
 DNSCACHE_ENABLED = True
@@ -158,7 +158,10 @@ FEED_EXPORTERS_BASE = {
 }
 FEED_EXPORT_INDENT = 0
 
+FEED_STORAGE_S3_ACL = ''
+
 FILES_STORE_S3_ACL = 'private'
+FILES_STORE_GCS_ACL = ''
 
 FTP_USER = 'anonymous'
 FTP_PASSWORD = 'guest'
@@ -181,6 +184,7 @@ HTTPPROXY_ENABLED = True
 HTTPPROXY_AUTH_ENCODING = 'latin-1'
 
 IMAGES_STORE_S3_ACL = 'private'
+IMAGES_STORE_GCS_ACL = ''
 
 ITEM_PROCESSOR = 'scrapy.pipelines.ItemPipelineManager'
 
@@ -242,7 +246,7 @@ ROBOTSTXT_OBEY = False
 SCHEDULER = 'scrapy.core.scheduler.Scheduler'
 SCHEDULER_DISK_QUEUE = 'scrapy.squeues.PickleLifoDiskQueue'
 SCHEDULER_MEMORY_QUEUE = 'scrapy.squeues.LifoMemoryQueue'
-SCHEDULER_PRIORITY_QUEUE = 'queuelib.PriorityQueue'
+SCHEDULER_PRIORITY_QUEUE = 'scrapy.pqueues.ScrapyPriorityQueue'
 
 SPIDER_LOADER_CLASS = 'scrapy.spiderloader.SpiderLoader'
 SPIDER_LOADER_WARN_ONLY = False
@@ -270,11 +274,13 @@ TEMPLATES_DIR = abspath(join(dirname(__file__), '..', 'templates'))
 
 URLLENGTH_LIMIT = 2083
 
-USER_AGENT = 'Scrapy/%s (+http://scrapy.org)' % import_module('scrapy').__version__
+USER_AGENT = 'Scrapy/%s (+https://scrapy.org)' % import_module('scrapy').__version__
 
 TELNETCONSOLE_ENABLED = 1
 TELNETCONSOLE_PORT = [6023, 6073]
 TELNETCONSOLE_HOST = '127.0.0.1'
+TELNETCONSOLE_USERNAME = 'scrapy'
+TELNETCONSOLE_PASSWORD = None
 
 SPIDER_CONTRACTS = {}
 SPIDER_CONTRACTS_BASE = {

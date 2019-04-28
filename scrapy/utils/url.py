@@ -47,7 +47,7 @@ def parse_url(url, encoding=None):
 def escape_ajax(url):
     """
     Return the crawleable url according to:
-    http://code.google.com/web/ajaxcrawling/docs/getting-started.html
+    https://developers.google.com/webmasters/ajax-crawling/docs/getting-started
 
     >>> escape_ajax("www.example.com/ajax.html#!key=value")
     'www.example.com/ajax.html?_escaped_fragment_=key%3Dvalue'
@@ -109,12 +109,12 @@ def strip_url(url, strip_credentials=True, strip_default_port=True, origin_only=
 
     """Strip URL string from some of its components:
 
-    - `strip_credentials` removes "user:password@"
-    - `strip_default_port` removes ":80" (resp. ":443", ":21")
+    - ``strip_credentials`` removes "user:password@"
+    - ``strip_default_port`` removes ":80" (resp. ":443", ":21")
       from http:// (resp. https://, ftp://) URLs
-    - `origin_only` replaces path component with "/", also dropping
+    - ``origin_only`` replaces path component with "/", also dropping
       query and fragment components ; it also strips credentials
-    - `strip_fragment` drops any #fragment component
+    - ``strip_fragment`` drops any #fragment component
     """
 
     parsed_url = urlparse(url)

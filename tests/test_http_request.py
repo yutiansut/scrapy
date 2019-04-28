@@ -2,6 +2,8 @@
 import cgi
 import unittest
 import re
+import json
+import warnings
 
 import six
 from six.moves import xmlrpc_client as xmlrpclib
@@ -9,8 +11,10 @@ from six.moves.urllib.parse import urlparse, parse_qs, unquote
 if six.PY3:
     from urllib.parse import unquote_to_bytes
 
-from scrapy.http import Request, FormRequest, XmlRpcRequest, Headers, HtmlResponse
+from scrapy.http import Request, FormRequest, XmlRpcRequest, JSONRequest, Headers, HtmlResponse
 from scrapy.utils.python import to_bytes, to_native_str
+
+from tests import mock
 
 
 class RequestTest(unittest.TestCase):
@@ -174,7 +178,8 @@ class RequestTest(unittest.TestCase):
         def somecallback():
             pass
 
-        r1 = self.request_class("http://www.example.com", callback=somecallback, errback=somecallback)
+        r1 = self.request_class("http://www.example.com", flags=['f1', 'f2'],
+                                callback=somecallback, errback=somecallback)
         r1.meta['foo'] = 'bar'
         r2 = r1.copy()
 
@@ -183,6 +188,10 @@ class RequestTest(unittest.TestCase):
         assert r1.errback is somecallback
         assert r2.callback is r1.callback
         assert r2.errback is r2.errback
+
+        # make sure flags list is shallow copied
+        assert r1.flags is not r2.flags, "flags must be a shallow copy, not identical"
+        self.assertEqual(r1.flags, r2.flags)
 
         # make sure meta dict is shallow copied
         assert r1.meta is not r2.meta, "meta must be a shallow copy, not identical"
@@ -401,6 +410,29 @@ class FormRequestTest(RequestTest):
         self.assertEqual(fs[u'test2'], [u'xxx µ'])
         self.assertEqual(fs[u'six'], [u'seven'])
 
+    def test_from_response_duplicate_form_key(self):
+        response = _buildresponse(
+                '<form></form>',
+                url='http://www.example.com')
+        req = self.request_class.from_response(response,
+                method='GET',
+                formdata=(('foo', 'bar'), ('foo', 'baz')))
+        self.assertEqual(urlparse(req.url).hostname, 'www.example.com')
+        self.assertEqual(urlparse(req.url).query, 'foo=bar&foo=baz')
+    
+    def test_from_response_override_duplicate_form_key(self):
+        response = _buildresponse(
+            """<form action="get.php" method="POST">
+            <input type="hidden" name="one" value="1">
+            <input type="hidden" name="two" value="3">
+            </form>""")
+        req = self.request_class.from_response(
+            response,
+            formdata=(('two', '2'), ('two', '4')))
+        fs = _qs(req)
+        self.assertEqual(fs[b'one'], [b'1'])
+        self.assertEqual(fs[b'two'], [b'2', b'4'])
+
     def test_from_response_extra_headers(self):
         response = _buildresponse(
             """<form action="post.php" method="POST">
@@ -542,6 +574,16 @@ class FormRequestTest(RequestTest):
             <input type="submit" name="i3" value="i3v">
             </form>""")
         req = self.request_class.from_response(response, dont_click=True)
+        fs = _qs(req)
+        self.assertEqual(fs, {b'i1': [b'i1v'], b'i2': [b'i2v']})
+    
+    def test_from_response_clickdata_does_not_ignore_image(self):
+        response = _buildresponse(
+            """<form>
+            <input type="text" name="i1" value="i1v">
+            <input id="image" name="i2" type="image" value="i2v" alt="Login" src="http://my.image.org/1.jpg">
+            </form>""")
+        req = self.request_class.from_response(response)
         fs = _qs(req)
         self.assertEqual(fs, {b'i1': [b'i1v'], b'i2': [b'i2v']})
 
@@ -1107,6 +1149,170 @@ class XmlRpcRequestTest(RequestTest):
 
     def test_latin1(self):
         self._test_request(params=(u'pas£',), encoding='latin1')
+
+
+class JSONRequestTest(RequestTest):
+    request_class = JSONRequest
+    default_method = 'GET'
+    default_headers = {b'Content-Type': [b'application/json'], b'Accept': [b'application/json, text/javascript, */*; q=0.01']}
+
+    def setUp(self):
+        warnings.simplefilter("always")
+        super(JSONRequestTest, self).setUp()
+
+    def test_data(self):
+        r1 = self.request_class(url="http://www.example.com/")
+        self.assertEqual(r1.body, b'')
+
+        body = b'body'
+        r2 = self.request_class(url="http://www.example.com/", body=body)
+        self.assertEqual(r2.body, body)
+
+        data = {
+            'name': 'value',
+        }
+        r3 = self.request_class(url="http://www.example.com/", data=data)
+        self.assertEqual(r3.body, to_bytes(json.dumps(data)))
+
+        # empty data
+        r4 = self.request_class(url="http://www.example.com/", data=[])
+        self.assertEqual(r4.body, to_bytes(json.dumps([])))
+
+    def test_data_method(self):
+        # data is not passed
+        r1 = self.request_class(url="http://www.example.com/")
+        self.assertEqual(r1.method, 'GET')
+
+        body = b'body'
+        r2 = self.request_class(url="http://www.example.com/", body=body)
+        self.assertEqual(r2.method, 'GET')
+
+        data = {
+            'name': 'value',
+        }
+        r3 = self.request_class(url="http://www.example.com/", data=data)
+        self.assertEqual(r3.method, 'POST')
+
+        # method passed explicitly
+        r4 = self.request_class(url="http://www.example.com/", data=data, method='GET')
+        self.assertEqual(r4.method, 'GET')
+
+        r5 = self.request_class(url="http://www.example.com/", data=[])
+        self.assertEqual(r5.method, 'POST')
+
+    def test_body_data(self):
+        """ passing both body and data should result a warning """
+        body = b'body'
+        data = {
+            'name': 'value',
+        }
+        with warnings.catch_warnings(record=True) as _warnings:
+            r5 = self.request_class(url="http://www.example.com/", body=body, data=data)
+            self.assertEqual(r5.body, body)
+            self.assertEqual(r5.method, 'GET')
+            self.assertEqual(len(_warnings), 1)
+            self.assertIn('data will be ignored', str(_warnings[0].message))
+
+    def test_empty_body_data(self):
+        """ passing any body value and data should result a warning """
+        data = {
+            'name': 'value',
+        }
+        with warnings.catch_warnings(record=True) as _warnings:
+            r6 = self.request_class(url="http://www.example.com/", body=b'', data=data)
+            self.assertEqual(r6.body, b'')
+            self.assertEqual(r6.method, 'GET')
+            self.assertEqual(len(_warnings), 1)
+            self.assertIn('data will be ignored', str(_warnings[0].message))
+
+    def test_body_none_data(self):
+        data = {
+            'name': 'value',
+        }
+        with warnings.catch_warnings(record=True) as _warnings:
+            r7 = self.request_class(url="http://www.example.com/", body=None, data=data)
+            self.assertEqual(r7.body, to_bytes(json.dumps(data)))
+            self.assertEqual(r7.method, 'POST')
+            self.assertEqual(len(_warnings), 0)
+
+    def test_body_data_none(self):
+        with warnings.catch_warnings(record=True) as _warnings:
+            r8 = self.request_class(url="http://www.example.com/", body=None, data=None)
+            self.assertEqual(r8.method, 'GET')
+            self.assertEqual(len(_warnings), 0)
+
+    def test_dumps_sort_keys(self):
+        """ Test that sort_keys=True is passed to json.dumps by default """
+        data = {
+            'name': 'value',
+        }
+        with mock.patch('json.dumps', return_value=b'') as mock_dumps:
+            self.request_class(url="http://www.example.com/", data=data)
+            kwargs = mock_dumps.call_args[1]
+            self.assertEqual(kwargs['sort_keys'], True)
+
+    def test_dumps_kwargs(self):
+        """ Test that dumps_kwargs are passed to json.dumps """
+        data = {
+            'name': 'value',
+        }
+        dumps_kwargs = {
+            'ensure_ascii': True,
+            'allow_nan': True,
+        }
+        with mock.patch('json.dumps', return_value=b'') as mock_dumps:
+            self.request_class(url="http://www.example.com/", data=data, dumps_kwargs=dumps_kwargs)
+            kwargs = mock_dumps.call_args[1]
+            self.assertEqual(kwargs['ensure_ascii'], True)
+            self.assertEqual(kwargs['allow_nan'], True)
+
+    def test_replace_data(self):
+        data1 = {
+            'name1': 'value1',
+        }
+        data2 = {
+            'name2': 'value2',
+        }
+        r1 = self.request_class(url="http://www.example.com/", data=data1)
+        r2 = r1.replace(data=data2)
+        self.assertEqual(r2.body, to_bytes(json.dumps(data2)))
+
+    def test_replace_sort_keys(self):
+        """ Test that replace provides sort_keys=True to json.dumps """
+        data1 = {
+            'name1': 'value1',
+        }
+        data2 = {
+            'name2': 'value2',
+        }
+        r1 = self.request_class(url="http://www.example.com/", data=data1)
+        with mock.patch('json.dumps', return_value=b'') as mock_dumps:
+            r1.replace(data=data2)
+            kwargs = mock_dumps.call_args[1]
+            self.assertEqual(kwargs['sort_keys'], True)
+
+    def test_replace_dumps_kwargs(self):
+        """ Test that dumps_kwargs are provided to json.dumps when replace is called """
+        data1 = {
+            'name1': 'value1',
+        }
+        data2 = {
+            'name2': 'value2',
+        }
+        dumps_kwargs = {
+            'ensure_ascii': True,
+            'allow_nan': True,
+        }
+        r1 = self.request_class(url="http://www.example.com/", data=data1, dumps_kwargs=dumps_kwargs)
+        with mock.patch('json.dumps', return_value=b'') as mock_dumps:
+            r1.replace(data=data2)
+            kwargs = mock_dumps.call_args[1]
+            self.assertEqual(kwargs['ensure_ascii'], True)
+            self.assertEqual(kwargs['allow_nan'], True)
+
+    def tearDown(self):
+        warnings.resetwarnings()
+        super(JSONRequestTest, self).tearDown()
 
 
 if __name__ == "__main__":

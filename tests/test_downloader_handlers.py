@@ -1,7 +1,8 @@
 import os
 import six
-import contextlib
 import shutil
+import tempfile
+import contextlib
 try:
     from unittest import mock
 except ImportError:
@@ -40,13 +41,23 @@ from scrapy.exceptions import NotConfigured
 from tests.mockserver import MockServer, ssl_context_factory, Echo
 from tests.spiders import SingleRequestSpider
 
+
 class DummyDH(object):
+    lazy = False
+
+    def __init__(self, crawler):
+        pass
+
+
+class DummyLazyDH(object):
+    # Default is lazy for backward compatibility
 
     def __init__(self, crawler):
         pass
 
 
 class OffDH(object):
+    lazy = False
 
     def __init__(self, crawler):
         raise NotConfigured
@@ -59,8 +70,6 @@ class LoadTestCase(unittest.TestCase):
         crawler = get_crawler(settings_dict={'DOWNLOAD_HANDLERS': handlers})
         dh = DownloadHandlers(crawler)
         self.assertIn('scheme', dh._schemes)
-        for scheme in handlers: # force load handlers
-            dh._get_handler(scheme)
         self.assertIn('scheme', dh._handlers)
         self.assertNotIn('scheme', dh._notconfigured)
 
@@ -69,8 +78,6 @@ class LoadTestCase(unittest.TestCase):
         crawler = get_crawler(settings_dict={'DOWNLOAD_HANDLERS': handlers})
         dh = DownloadHandlers(crawler)
         self.assertIn('scheme', dh._schemes)
-        for scheme in handlers: # force load handlers
-            dh._get_handler(scheme)
         self.assertNotIn('scheme', dh._handlers)
         self.assertIn('scheme', dh._notconfigured)
 
@@ -79,10 +86,21 @@ class LoadTestCase(unittest.TestCase):
         crawler = get_crawler(settings_dict={'DOWNLOAD_HANDLERS': handlers})
         dh = DownloadHandlers(crawler)
         self.assertNotIn('scheme', dh._schemes)
-        for scheme in handlers: # force load handlers
+        for scheme in handlers:  # force load handlers
             dh._get_handler(scheme)
         self.assertNotIn('scheme', dh._handlers)
         self.assertIn('scheme', dh._notconfigured)
+
+    def test_lazy_handlers(self):
+        handlers = {'scheme': 'tests.test_downloader_handlers.DummyLazyDH'}
+        crawler = get_crawler(settings_dict={'DOWNLOAD_HANDLERS': handlers})
+        dh = DownloadHandlers(crawler)
+        self.assertIn('scheme', dh._schemes)
+        self.assertNotIn('scheme', dh._handlers)
+        for scheme in handlers:  # force load lazy handler
+            dh._get_handler(scheme)
+        self.assertIn('scheme', dh._handlers)
+        self.assertNotIn('scheme', dh._notconfigured)
 
 
 class FileTestCase(unittest.TestCase):
@@ -505,6 +523,19 @@ class Https11InvalidDNSId(Https11TestCase):
         super(Https11InvalidDNSId, self).setUp()
         self.host = '127.0.0.1'
 
+class Https11InvalidDNSPattern(Https11TestCase):
+    """Connect to HTTPS hosts where the certificate are issued to an ip instead of a domain."""
+
+    keyfile = 'keys/localhost.ip.key'
+    certfile = 'keys/localhost.ip.crt'
+
+    def setUp(self):
+        try:
+            from service_identity.exceptions import CertificateError
+        except ImportError:
+            raise unittest.SkipTest("cryptography lib is too old")
+        super(Https11InvalidDNSPattern, self).setUp()
+
 
 class Http11MockServerTestCase(unittest.TestCase):
     """HTTP 1.1 test case with MockServer"""
@@ -521,14 +552,14 @@ class Http11MockServerTestCase(unittest.TestCase):
         crawler = get_crawler(SingleRequestSpider)
         # http://localhost:8998/partial set Content-Length to 1024, use download_maxsize= 1000 to avoid
         # download it
-        yield crawler.crawl(seed=Request(url='http://localhost:8998/partial', meta={'download_maxsize': 1000}))
+        yield crawler.crawl(seed=Request(url=self.mockserver.url('/partial'), meta={'download_maxsize': 1000}))
         failure = crawler.spider.meta['failure']
         self.assertIsInstance(failure.value, defer.CancelledError)
 
     @defer.inlineCallbacks
     def test_download(self):
         crawler = get_crawler(SingleRequestSpider)
-        yield crawler.crawl(seed=Request(url='http://localhost:8998'))
+        yield crawler.crawl(seed=Request(url=self.mockserver.url('')))
         failure = crawler.spider.meta.get('failure')
         self.assertTrue(failure == None)
         reason = crawler.spider.meta['close_reason']
@@ -538,7 +569,7 @@ class Http11MockServerTestCase(unittest.TestCase):
     def test_download_gzip_response(self):
         crawler = get_crawler(SingleRequestSpider)
         body = b'1' * 100  # PayloadResource requires body length to be 100
-        request = Request('http://localhost:8998/payload', method='POST',
+        request = Request(self.mockserver.url('/payload'), method='POST',
                           body=body, meta={'download_maxsize': 50})
         yield crawler.crawl(seed=request)
         failure = crawler.spider.meta['failure']
@@ -547,7 +578,7 @@ class Http11MockServerTestCase(unittest.TestCase):
 
         if six.PY2:
             request.headers.setdefault(b'Accept-Encoding', b'gzip,deflate')
-            request = request.replace(url='http://localhost:8998/xpayload')
+            request = request.replace(url=self.mockserver.url('/xpayload'))
             yield crawler.crawl(seed=request)
             # download_maxsize = 50 is enough for the gzipped response
             failure = crawler.spider.meta.get('failure')
@@ -900,7 +931,9 @@ class BaseFTPTestCase(unittest.TestCase):
         return self._add_test_callbacks(d, _test)
 
     def test_ftp_local_filename(self):
-        local_fname = b"/tmp/file.txt"
+        f, local_fname = tempfile.mkstemp()
+        local_fname = to_bytes(local_fname)
+        os.close(f)
         meta = {"ftp_local_filename": local_fname}
         meta.update(self.req_meta)
         request = Request(url="ftp://127.0.0.1:%s/file.txt" % self.portNum,
@@ -909,7 +942,8 @@ class BaseFTPTestCase(unittest.TestCase):
 
         def _test(r):
             self.assertEqual(r.body, local_fname)
-            self.assertEqual(r.headers, {b'Local Filename': [b'/tmp/file.txt'], b'Size': [b'17']})
+            self.assertEqual(r.headers, {b'Local Filename': [local_fname],
+                                         b'Size': [b'17']})
             self.assertTrue(os.path.exists(local_fname))
             with open(local_fname, "rb") as f:
                 self.assertEqual(f.read(), b"I have the power!")

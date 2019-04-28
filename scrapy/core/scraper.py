@@ -135,7 +135,6 @@ class Scraper(object):
             return self.spidermw.scrape_response(
                 self.call_spider, request_result, request, spider)
         else:
-            # FIXME: don't ignore errors in spider middleware
             dfd = self.call_spider(request_result, request, spider)
             return dfd.addErrback(
                 self._log_download_errors, request_result, request, spider)
@@ -232,6 +231,9 @@ class Scraper(object):
                 logger.error('Error processing %(item)s', {'item': item},
                              exc_info=failure_to_exc_info(output),
                              extra={'spider': spider})
+                return self.signals.send_catch_log_deferred(
+                    signal=signals.item_error, item=item, response=response,
+                    spider=spider, failure=output)
         else:
             logkws = self.logformatter.scraped(output, response, spider)
             logger.log(*logformatter_adapter(logkws), extra={'spider': spider})

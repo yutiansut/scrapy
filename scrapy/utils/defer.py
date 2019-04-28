@@ -11,7 +11,7 @@ def defer_fail(_failure):
     """Same as twisted.internet.defer.fail but delay calling errback until
     next reactor loop
 
-    It delays by 100ms so reactor has a chance to go trough readers and writers
+    It delays by 100ms so reactor has a chance to go through readers and writers
     before attending pending delayed calls, so do not set delay to zero.
     """
     d = defer.Deferred()
@@ -48,7 +48,7 @@ def mustbe_deferred(f, *args, **kw):
     # exception in Scrapy - see #125
     except IgnoreRequest as e:
         return defer_fail(failure.Failure(e))
-    except:
+    except Exception:
         return defer_fail(failure.Failure())
     else:
         return defer_result(result)
@@ -57,7 +57,7 @@ def parallel(iterable, count, callable, *args, **named):
     """Execute a callable over the objects in the given iterable, in parallel,
     using no more than ``count`` concurrent calls.
 
-    Taken from: http://jcalderone.livejournal.com/24285.html
+    Taken from: https://jcalderone.livejournal.com/24285.html
     """
     coop = task.Cooperator()
     work = (callable(elem, *args, **named) for elem in iterable)
@@ -102,5 +102,5 @@ def iter_errback(iterable, errback, *a, **kw):
             yield next(it)
         except StopIteration:
             break
-        except:
+        except Exception:
             errback(failure.Failure(), *a, **kw)
